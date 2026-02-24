@@ -92,12 +92,13 @@ instances() {
     local tempdir
     tempdir=$(mktemp -d)
     local regions
-    regions=$(aws ec2 describe-regions --query "Regions[].RegionName" --output text)
+    # regions=$(aws ec2 describe-regions --query "Regions[].RegionName" --output text)
 
-    # Fetch describe-instances for each region in parallel
-    for region in $regions; do
-        aws ec2 describe-instances --region "$region" --output json > "$tempdir/$region.json" &
-    done
+    # # Fetch describe-instances for each region in parallel
+    # for region in $regions; do
+    #     aws ec2 describe-instances --region "$region" --output json > "$tempdir/$region.json" &
+    # done
+    aws ec2 describe-instances --region "$(cat "$AXIOM_PATH/axiom.json" | jq -r '.region')" --output json > "$tempdir/instances.json" &
     wait
 
     # Merge all Reservations into one global array
@@ -604,28 +605,41 @@ delete_instances() {
     regions=$(aws ec2 describe-regions --query "Regions[].RegionName" --output text)
 
     # Fetch minimized instance data per region in parallel
-    for region in $regions; do
-        (
-            aws ec2 describe-instances --region "$region" \
-                --query "Reservations[].Instances[].{InstanceId: InstanceId, Name: Tags[?Key=='Name']|[0].Value, State: State.Name, AZ: Placement.AvailabilityZone}" \
-                --output json > "$tempdir/$region.json" 2>/dev/null
-        ) &
-    done
+    # for region in $regions; do
+    #     (
+    #         aws ec2 describe-instances --region "$region" \
+    #             --query "Reservations[].Instances[].{InstanceId: InstanceId, Name: Tags[?Key=='Name']|[0].Value, State: State.Name, AZ: Placement.AvailabilityZone}" \
+    #             --output json > "$tempdir/$region.json" 2>/dev/null
+    #     ) &
+    # done
+    aws ec2 describe-instances --region "$(cat "$AXIOM_PATH/axiom.json" | jq -r '.region')" \
+        --query "Reservations[].Instances[].{InstanceId: InstanceId, Name: Tags[?Key=='Name']|[0].Value, State: State.Name, AZ: Placement.AvailabilityZone}" \
+        --output json > "$tempdir/instances.json" 2>/dev/null &
     wait
 
     # Gather matching instance info into flat list
-    for region in $regions; do
-        if [ -s "$tempdir/$region.json" ]; then
-            while IFS=$'\t' read -r instance_id instance_name state az; do
-                for name in "${name_array[@]}"; do
-                    if [[ "$instance_name" == "$name" && "$state" != "terminated" ]]; then
-                        region_name="${az::-1}" # strip last letter of AZ to get region
-                        instance_info_list+=("$instance_id|$region_name|$instance_name")
-                    fi
-                done
-            done < <(jq -r '.[] | [.InstanceId, .Name, .State, .AZ] | @tsv' "$tempdir/$region.json")
-        fi
-    done
+    # for region in $regions; do
+    #     if [ -s "$tempdir/$region.json" ]; then
+    #         while IFS=$'\t' read -r instance_id instance_name state az; do
+    #             for name in "${name_array[@]}"; do
+    #                 if [[ "$instance_name" == "$name" && "$state" != "terminated" ]]; then
+    #                     region_name="${az::-1}" # strip last letter of AZ to get region
+    #                     instance_info_list+=("$instance_id|$region_name|$instance_name")
+    #                 fi
+    #             done
+    #         done < <(jq -r '.[] | [.InstanceId, .Name, .State, .AZ] | @tsv' "$tempdir/$region.json")
+    #     fi
+    # done
+    if [ -s "$tempdir/instances.json" ]; then
+        while IFS=$'\t' read -r instance_id instance_name state az; do
+            for name in "${name_array[@]}"; do
+                if [[ "$instance_name" == "$name" && "$state" != "terminated" ]]; then
+                    region_name="${az::-1}" # strip last letter of AZ to get region
+                    instance_info_list+=("$instance_id|$region_name|$instance_name")
+                fi
+            done
+        done < <(jq -r '.[] | [.InstanceId, .Name, .State, .AZ] | @tsv' "$tempdir/instances.json")
+    fi
 
     rm -rf "$tempdir"
 
@@ -635,34 +649,58 @@ delete_instances() {
     fi
 
     # Group and delete by region
-    for region in $regions; do
-        ids_to_delete=()
-        for info in "${instance_info_list[@]}"; do
-            instance_id=$(echo "$info" | cut -d'|' -f1)
-            info_region=$(echo "$info" | cut -d'|' -f2)
-            if [[ "$info_region" == "$region" ]]; then
-                ids_to_delete+=("$instance_id")
-            fi
-        done
+    # for region in $regions; do
+    #     ids_to_delete=()
+    #     for info in "${instance_info_list[@]}"; do
+    #         instance_id=$(echo "$info" | cut -d'|' -f1)
+    #         info_region=$(echo "$info" | cut -d'|' -f2)
+    #         if [[ "$info_region" == "$region" ]]; then
+    #             ids_to_delete+=("$instance_id")
+    #         fi
+    #     done
 
-        if [ ${#ids_to_delete[@]} -gt 0 ]; then
-            if [[ "$force" == "true" ]]; then
-                echo -e "${Red}Deleting in $region: ${ids_to_delete[*]}${Color_Off}"
-                aws ec2 terminate-instances --instance-ids "${ids_to_delete[@]}" --region "$region" >/dev/null 2>&1
-            else
-                for id in "${ids_to_delete[@]}"; do
-                    echo -e -n "Delete instance $id in $region? (y/N): "
-                    read ans
-                    if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
-                        echo -e "${Red}Deleting $id...${Color_Off}"
-                        aws ec2 terminate-instances --instance-ids "$id" --region "$region" >/dev/null 2>&1
-                    else
-                        echo "Aborted $id."
-                    fi
-                done
-            fi
-        fi
+    #     if [ ${#ids_to_delete[@]} -gt 0 ]; then
+    #         if [[ "$force" == "true" ]]; then
+    #             echo -e "${Red}Deleting in $region: ${ids_to_delete[*]}${Color_Off}"
+    #             aws ec2 terminate-instances --instance-ids "${ids_to_delete[@]}" --region "$region" >/dev/null 2>&1
+    #         else
+    #             for id in "${ids_to_delete[@]}"; do
+    #                 echo -e -n "Delete instance $id in $region? (y/N): "
+    #                 read ans
+    #                 if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
+    #                     echo -e "${Red}Deleting $id...${Color_Off}"
+    #                     aws ec2 terminate-instances --instance-ids "$id" --region "$region" >/dev/null 2>&1
+    #                 else
+    #                     echo "Aborted $id."
+    #                 fi
+    #             done
+    #         fi
+    #     fi
+    # done
+    ids_to_delete=()
+    for info in "${instance_info_list[@]}"; do
+        instance_id=$(echo "$info" | cut -d'|' -f1)
+        ids_to_delete+=("$instance_id")
     done
+    
+    if [ ${#ids_to_delete[@]} -gt 0 ]; then
+        local region=$(cat "$AXIOM_PATH/axiom.json" | jq -r '.region')
+        if [[ "$force" == "true" ]]; then
+            echo -e "${Red}Deleting instances: ${ids_to_delete[*]}${Color_Off}"
+            aws ec2 terminate-instances --instance-ids "${ids_to_delete[@]}" --region "$region" >/dev/null 2>&1
+        else
+            for id in "${ids_to_delete[@]}"; do
+                echo -e -n "Delete instance $id? (y/N): "
+                read ans
+                if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
+                    echo -e "${Red}Deleting $id...${Color_Off}"
+                    aws ec2 terminate-instances --instance-ids "$id" --region "$region" >/dev/null 2>&1
+                else
+                    echo "Aborted $id."
+                fi
+            done
+        fi
+    fi
 }
 
 ###################################################################

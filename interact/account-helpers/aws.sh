@@ -126,6 +126,15 @@ if [[ "$disk_size" == "" ]]; then
   echo -e "${Blue}Selected default option '20'${Color_Off}"
 fi
 
+echo -e -n "${Green}Please enter your VPC subnet ID to launch instances into (e.g. subnet-xxxxxxxx). Leave blank to use the default VPC (public IPs): \n>> ${Color_Off}"
+read subnet_id
+if [[ "$subnet_id" == "" ]]; then
+  echo -e "${Blue}No subnet specified, instances will use the default VPC with public IPs.${Color_Off}"
+  subnet_id="null"
+else
+  echo -e "${Blue}Instances will be launched into subnet '$subnet_id' and reachable via private IP (conductor assumed to be on the same VPC).${Color_Off}"
+fi
+
 aws configure set default.region "$region"
 
 # Print available security groups
@@ -241,7 +250,7 @@ else
   exit 1
 fi
 
-data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\"}")"
+data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"subnet_id\":\"$subnet_id\"}")"
 
 echo -e "${BGreen}Profile settings below: ${Color_Off}"
 echo "$data" | jq '.aws_secret_access_key = "*************************************"'

@@ -23,12 +23,22 @@ create_instance() {
 
     security_group_name="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_name')"
     security_group_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_id')"
+    subnet_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.subnet_id // empty')"
 
-    # Determine whether to use security_group_name or security_group_id
-    if [[ -n "$security_group_name" && "$security_group_name" != "null" ]]; then
+    # In VPC mode (subnet_id set), must use security-group-ids; otherwise name or id
+    if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+        if [[ -z "$security_group_id" || "$security_group_id" == "null" ]]; then
+            echo "Error: subnet_id is set (VPC mode) but security_group_id is missing in axiom.json."
+            return 1
+        fi
+        security_group_option="--security-group-ids $security_group_id"
+        subnet_option="--subnet-id $subnet_id"
+    elif [[ -n "$security_group_name" && "$security_group_name" != "null" ]]; then
         security_group_option="--security-groups $security_group_name"
+        subnet_option=""
     elif [[ -n "$security_group_id" && "$security_group_id" != "null" ]]; then
         security_group_option="--security-group-ids $security_group_id"
+        subnet_option=""
     else
         echo "Error: Both security_group_name and security_group_id are missing or invalid in axiom.json."
         return 1
@@ -41,6 +51,7 @@ create_instance() {
         --instance-type "$size" \
         --region "$region" \
         $security_group_option \
+        $subnet_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         --user-data "$user_data" \
         $disk_option 2>&1 >> /dev/null
@@ -111,7 +122,12 @@ instances() {
 # used by axiom-ls axiom-init
 instance_ip() {
         name="$1"
-        instances | jq -r ".Reservations[].Instances[] | select(.Tags?[]?.Value==\"$name\") | .PublicIpAddress"
+        subnet_id="$(jq -r '.subnet_id // empty' "$AXIOM_PATH/axiom.json")"
+        if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+            instances | jq -r ".Reservations[].Instances[] | select(.Tags?[]?.Value==\"$name\") | .PrivateIpAddress"
+        else
+            instances | jq -r ".Reservations[].Instances[] | select(.Tags?[]?.Value==\"$name\") | .PublicIpAddress"
+        fi
 }
 
 # used by axiom-select axiom-ls
@@ -122,20 +138,39 @@ instance_list() {
 # used by axiom-ls
 instance_pretty() {
     local costs header fields data numInstances types totalCost updatedData footer
+    local subnet_id
+    subnet_id=$(jq -r '.subnet_id // empty' "$AXIOM_PATH/axiom.json")
 
     costs=$(curl -sL 'https://ec2.shop' -H 'accept: json')
-    header="Instance,Primary IP,Backend IP,Region,Type,Status,\$/M"
-    fields='.Reservations[].Instances[]
-        | select(.State.Name != "terminated")
-        | [
-            (.Tags?[]? | select(.Key == "Name") | .Value) // "N/A",
-            (.PublicIpAddress // "N/A"),
-            (.PrivateIpAddress // "N/A"),
-            (.Placement.AvailabilityZone // "N/A"),
-            (.InstanceType // "N/A"),
-            (.State.Name // "N/A")
-          ]
-        | @csv'
+
+    # In VPC mode, private IP is the reachable address; swap columns accordingly
+    if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+        header="Instance,Primary IP,Public IP,Region,Type,Status,\$/M"
+        fields='.Reservations[].Instances[]
+            | select(.State.Name != "terminated")
+            | [
+                (.Tags?[]? | select(.Key == "Name") | .Value) // "N/A",
+                (.PrivateIpAddress // "N/A"),
+                (.PublicIpAddress // "N/A"),
+                (.Placement.AvailabilityZone // "N/A"),
+                (.InstanceType // "N/A"),
+                (.State.Name // "N/A")
+              ]
+            | @csv'
+    else
+        header="Instance,Primary IP,Backend IP,Region,Type,Status,\$/M"
+        fields='.Reservations[].Instances[]
+            | select(.State.Name != "terminated")
+            | [
+                (.Tags?[]? | select(.Key == "Name") | .Value) // "N/A",
+                (.PublicIpAddress // "N/A"),
+                (.PrivateIpAddress // "N/A"),
+                (.Placement.AvailabilityZone // "N/A"),
+                (.InstanceType // "N/A"),
+                (.State.Name // "N/A")
+              ]
+            | @csv'
+    fi
 
     data=$(instances | jq -r "$fields" | sort -k1)
     data=$(echo "$data" | awk -F',' 'NF>=6')  # Filter to only rows with 6 fields
@@ -192,12 +227,19 @@ generate_sshconfig() {
     sshnew="$AXIOM_PATH/.sshconfig.new$RANDOM"
     sshkey=$(jq -r '.sshkey' < "$AXIOM_PATH/axiom.json")
     generate_sshconfig=$(jq -r '.generate_sshconfig' < "$AXIOM_PATH/axiom.json")
+    subnet_id=$(jq -r '.subnet_id // empty' < "$AXIOM_PATH/axiom.json")
     droplets="$(instances)"
 
     # handle lock/cache mode
     if [[ "$generate_sshconfig" == "lock" ]] || [[ "$generate_sshconfig" == "cache" ]] ; then
         echo -e "${BYellow}Using cached SSH config. No regeneration performed. To revert run:${Color_Off} ax ssh --just-generate"
         return 0
+    fi
+
+    # VPC mode: conductor is on the same VPC, so use private IPs automatically
+    if [[ -n "$subnet_id" && "$subnet_id" != "null" && "$generate_sshconfig" != "public" ]]; then
+        generate_sshconfig="private"
+        echo -e "${BYellow}VPC mode: using private IPs for SSH config. To force public IPs set generate_sshconfig=public in axiom.json${Color_Off}"
     fi
 
     # handle private mode
@@ -726,12 +768,22 @@ create_instances() {
 
     security_group_name="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_name')"
     security_group_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_id')"
+    subnet_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.subnet_id // empty')"
 
-    # Determine whether to use security_group_name or security_group_id
-    if [[ -n "$security_group_name" && "$security_group_name" != "null" ]]; then
+    # In VPC mode (subnet_id set), must use security-group-ids; otherwise name or id
+    if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+        if [[ -z "$security_group_id" || "$security_group_id" == "null" ]]; then
+            echo "Error: subnet_id is set (VPC mode) but security_group_id is missing in axiom.json."
+            return 1
+        fi
+        security_group_option="--security-group-ids $security_group_id"
+        subnet_option="--subnet-id $subnet_id"
+    elif [[ -n "$security_group_name" && "$security_group_name" != "null" ]]; then
         security_group_option="--security-groups $security_group_name"
+        subnet_option=""
     elif [[ -n "$security_group_id" && "$security_group_id" != "null" ]]; then
         security_group_option="--security-group-ids $security_group_id"
+        subnet_option=""
     else
         echo "Error: Both security_group_name and security_group_id are missing or invalid in axiom.json."
         return 1
@@ -748,6 +800,7 @@ create_instances() {
         --instance-type "$size" \
         --region "$region" \
         $security_group_option \
+        $subnet_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         $disk_option \
         --user-data "$user_data")
@@ -792,7 +845,7 @@ create_instances() {
             aws ec2 describe-instances \
                 --instance-ids "${instance_ids[@]}" \
                 --region "$region" \
-                --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,PublicIp:PublicIpAddress}' \
+                --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,PublicIp:PublicIpAddress,PrivateIp:PrivateIpAddress}' \
                 --output json
         )
         for i in "${!instance_ids[@]}"; do
@@ -801,7 +854,11 @@ create_instances() {
 
             # Parse the state and IP from the single JSON array
             state=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .State' <<< "$current_statuses")
-            ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PublicIp' <<< "$current_statuses")
+            if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+                ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PrivateIp' <<< "$current_statuses")
+            else
+                ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PublicIp' <<< "$current_statuses")
+            fi
 
             if [[ "$state" == "running" ]]; then
                 # If we haven't printed a success message yet, do it now

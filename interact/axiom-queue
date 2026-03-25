@@ -178,15 +178,24 @@ for instance in "${instances[@]}"; do
 
         result_json="$(echo "$raw" | tail -n 1)"
         exit_code="$(echo "$result_json" | jq -r '.exit_code // "?"' 2>/dev/null)"
+        output_inline="$(echo "$result_json" | jq -r '.output // empty' 2>/dev/null)"
         echo -e "${BGreen}[$instance]${Color_Off} done (exit=$exit_code)"
 
         if [[ -n "$output_dir" ]]; then
-            remote_path="/tmp/axiom-queue/${uid}/output"
-            if axiom-scp "${instance}:${remote_path}" "${output_dir}/${instance}" \
-                    --cache -F="$sshconfig" >/dev/null 2>&1; then
-                echo -e "${BGreen}[$instance]${Color_Off} output -> ${output_dir}/${instance}"
+            mkdir -p "$output_dir"
+            if [[ -n "$output_inline" ]]; then
+                # Output was small enough to be embedded in the result — no SSH needed
+                printf '%s' "$output_inline" > "${output_dir}/${instance}"
+                echo -e "${BGreen}[$instance]${Color_Off} output -> ${output_dir}/${instance} (via Redis)"
             else
-                echo -e "${BYellow}[$instance]${Color_Off} output copy failed (instance may have terminated)"
+                # Output exceeded inline limit; retrieve via a single SCP
+                remote_path="/tmp/axiom-queue/${uid}/output"
+                if axiom-scp "${instance}:${remote_path}" "${output_dir}/${instance}" \
+                        --cache -F="$sshconfig" >/dev/null 2>&1; then
+                    echo -e "${BGreen}[$instance]${Color_Off} output -> ${output_dir}/${instance} (via SCP)"
+                else
+                    echo -e "${BYellow}[$instance]${Color_Off} output copy failed (instance may have terminated)"
+                fi
             fi
         fi
     ) &

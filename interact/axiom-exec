@@ -24,6 +24,7 @@ set=false
 sshkey=$(cat "$AXIOM_PATH/axiom.json" | jq -r '.sshkey | select( . != null )')
 cache=false
 quiet=false
+use_queue=false
 starttime=$(date +"%F-TIME-%T")
 uid="$(date +%s)"
 tmp="$AXIOM_PATH/tmp/exec/$uid"
@@ -70,6 +71,7 @@ function usage() {
     echo -e "  --debug                       Enable verbose debug output"
     echo
     echo -e "${BWhite}Other:${Color_Off}"
+    echo -e "  --queue                       Dispatch via Redis queue (no persistent SSH; requires conductor_ip in axiom.json)"
     echo -e "  --help                        Show this help menu"
     echo
     echo -e "${BWhite}Examples:${Color_Off}"
@@ -160,6 +162,11 @@ do
             set=true
             pass+=($i)
             pass+=($n)
+        fi
+        if [[ "$arg" == "--queue" ]]; then
+            use_queue=true
+            set=true
+            pass+=($i)
         fi
 #        if  [[ "$set" != "true" ]]; then
 #            space=" "
@@ -350,6 +357,35 @@ fi
 if [[ "$total_instances" -eq "0" ]]; then
   echo -e "${BRed}Error: Unable to reach any instance selected. List all instances with ${Color_Off}ax ls${BRed} or select instances with ${Color_Off}ax select${BRed} exiting..${Color_Off}"
   exit;
+fi
+
+###########################################################################################################
+#  Queue mode: dispatch via Redis instead of persistent SSH connections
+#  Requires conductor_ip set in axiom.json and axiom-worker running on instances
+#
+if [[ "$use_queue" == "true" ]]; then
+    conductor_ip="$(jq -r '.conductor_ip // empty' "$AXIOM_PATH/axiom.json")"
+    if [[ -z "$conductor_ip" || "$conductor_ip" == "null" ]]; then
+        echo -e "${BRed}Error: --queue requires conductor_ip to be set in axiom.json${Color_Off}"
+        exit 1
+    fi
+    mkdir -p "$tmp/output"
+    axiom-queue \
+        --uid "$uid" \
+        --command "$commands" \
+        --output "$tmp/output" \
+        --timeout "$timeout" \
+        --sshconfig "$sshconfig" \
+        --redis-start
+    # Print collected output
+    if ls "$tmp/output/"* >/dev/null 2>&1; then
+        for f in "$tmp/output/"*; do
+            instance="$(basename "$f")"
+            echo -e "\n${BWhite}=== $instance ===${Color_Off}"
+            cat "$f"
+        done
+    fi
+    clean_up
 fi
 
 ###########################################################################################################

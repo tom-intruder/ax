@@ -84,24 +84,22 @@ fi
 
 function awssetup(){
 
-echo -e -n "${Green}Please enter your AWS Access Key ID (required): \n>> ${Color_Off}"
+echo -e "${BYellow}If this conductor runs on an EC2 instance with an IAM role attached, you can leave the credentials blank and the AWS CLI will use the instance metadata automatically.${Color_Off}"
+echo -e -n "${Green}Please enter your AWS Access Key ID (leave blank to use EC2 instance profile): \n>> ${Color_Off}"
 read ACCESS_KEY
-while [[ "$ACCESS_KEY" == "" ]]; do
-	echo -e "${BRed}Please provide an AWS Access KEY ID, your entry contained no input.${Color_Off}"
-	echo -e -n "${Green}Please enter your token (required): \n>> ${Color_Off}"
-	read ACCESS_KEY
-done
 
-echo -e -n "${Green}Please enter your AWS Secret Access Key (required): \n>> ${Color_Off}"
+echo -e -n "${Green}Please enter your AWS Secret Access Key (leave blank to use EC2 instance profile): \n>> ${Color_Off}"
 read SECRET_KEY
-while [[ "$SECRET_KEY" == "" ]]; do
-	echo -e "${BRed}Please provide an AWS Secret Access Key, your entry contained no input.${Color_Off}"
-	echo -e -n "${Green}Please enter your token (required): \n>> ${Color_Off}"
-	read SECRET_KEY
-done
 
-aws configure set aws_access_key_id "$ACCESS_KEY"
-aws configure set aws_secret_access_key "$SECRET_KEY"
+if [[ -n "$ACCESS_KEY" && -n "$SECRET_KEY" ]]; then
+    aws configure set aws_access_key_id "$ACCESS_KEY"
+    aws configure set aws_secret_access_key "$SECRET_KEY"
+    echo -e "${BGreen}AWS credentials configured.${Color_Off}"
+else
+    ACCESS_KEY="null"
+    SECRET_KEY="null"
+    echo -e "${BGreen}No credentials provided — will use EC2 instance profile / environment credentials.${Color_Off}"
+fi
 aws configure set output json
 
 default_region="us-west-2"
@@ -133,6 +131,24 @@ if [[ "$subnet_id" == "" ]]; then
   subnet_id="null"
 else
   echo -e "${Blue}Instances will be launched into subnet '$subnet_id' and reachable via private IP (conductor assumed to be on the same VPC).${Color_Off}"
+fi
+
+echo -e -n "${Green}Please enter this conductor's private IP for Redis queue mode (e.g. 10.0.1.5). Leave blank to auto-detect from EC2 metadata, or skip if not using queue mode: \n>> ${Color_Off}"
+read conductor_ip
+if [[ "$conductor_ip" == "" ]]; then
+  # Try EC2 instance metadata (IMDSv2)
+  token=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 10" 2>/dev/null)
+  if [[ -n "$token" ]]; then
+    conductor_ip=$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
+      "http://169.254.169.254/latest/meta-data/local-ipv4" 2>/dev/null)
+  fi
+  if [[ -n "$conductor_ip" ]]; then
+    echo -e "${BGreen}Auto-detected conductor IP from EC2 metadata: $conductor_ip${Color_Off}"
+  else
+    conductor_ip="null"
+    echo -e "${Blue}No conductor IP set. Queue mode will not be available until conductor_ip is added to axiom.json.${Color_Off}"
+  fi
 fi
 
 aws configure set default.region "$region"
@@ -250,10 +266,14 @@ else
   exit 1
 fi
 
-data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"subnet_id\":\"$subnet_id\"}")"
+data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"subnet_id\":\"$subnet_id\",\"conductor_ip\":\"$conductor_ip\",\"redis_port\":\"6379\"}")"
 
 echo -e "${BGreen}Profile settings below: ${Color_Off}"
-echo "$data" | jq '.aws_secret_access_key = "*************************************"'
+if [[ "$SECRET_KEY" != "null" ]]; then
+    echo "$data" | jq '.aws_secret_access_key = "*************************************"'
+else
+    echo "$data" | jq '.'
+fi
 echo -e "${BWhite}Press enter if you want to save these to a new profile, type 'r' if you wish to start again.${Color_Off}"
 read ans
 

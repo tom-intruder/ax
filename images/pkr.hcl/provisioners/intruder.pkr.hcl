@@ -109,7 +109,7 @@
         "/bin/su -l op -c 'GO111MODULE=on /usr/local/go/bin/go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'",
 
         "echo 'Installing nuclei-templates'",
-        '"/bin/su -l op -c '/home/op/go/bin/nuclei -ut'"
+        "/bin/su -l op -c '/home/op/go/bin/nuclei -ut'",
 
         "echo 'Installing axiom-worker (Redis task queue worker)'",
         "pip3 install redis -q",

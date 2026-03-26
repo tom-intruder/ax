@@ -215,11 +215,8 @@ if [ "$sshkey" == "" ] || [ "$sshkey" == "null" ]; then
 fi
 
 ###########################################################################################################
-# Create cloud-init user-data to inject ssh pub key and optional queue worker config
+# Create cloud-init user-data to inject ssh pub key
 #
-conductor_ip="$(jq -r '.conductor_ip // empty' "$AXIOM_PATH/axiom.json")"
-redis_port="$(jq -r '.redis_port // "6379"' "$AXIOM_PATH/axiom.json")"
-
 if [ -f ~/.ssh/$sshkey.pub ] ; then
     public_key_content=$(cat "$HOME/.ssh/$sshkey.pub")
     user_data=$(cat <<EOF
@@ -233,21 +230,6 @@ users:
     shell: /bin/bash
 EOF
 )
-
-    # When conductor_ip is set (VPC queue mode), write the worker config and start the service
-    if [[ -n "$conductor_ip" && "$conductor_ip" != "null" ]]; then
-        user_data+="
-write_files:
-  - content: |
-      CONDUCTOR_IP=$conductor_ip
-      REDIS_PORT=$redis_port
-    path: /home/op/.axiom-worker.conf
-    owner: op:op
-    permissions: '0644'
-runcmd:
-  - systemctl start axiom-worker
-"
-    fi
 fi
 
 ###########################################################################################################

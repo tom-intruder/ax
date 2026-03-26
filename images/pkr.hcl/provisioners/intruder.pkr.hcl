@@ -80,10 +80,6 @@
         "echo 'Installing anew'",
         "/bin/su -l op -c '/usr/local/go/bin/go install -v github.com/tomnomnom/anew@latest'",
 
-
-        "echo 'Installing ax framework'",
-        "/bin/su -l op -c 'git clone https://github.com/attacksurge/ax.git /home/op/.axiom && cd /home/op/.axiom/interact && ./axiom-configure --setup --shell zsh --unattended'",
-
         "echo 'Installing httprobe'",
         "/bin/su -l op -c '/usr/local/go/bin/go install github.com/tomnomnom/httprobe@latest'",
 
@@ -106,11 +102,14 @@
         "/bin/su -l op -c 'GO111MODULE=on /usr/local/go/bin/go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest'",
 
         "echo 'Installing nmap'",
-	"sudo apt-get -qy --no-install-recommends install alien",
-	"/bin/su -l op -c 'wget https://nmap.org/dist/nmap-7.94-1.x86_64.rpm -O /home/op/recon/nmap.rpm && cd /home/op/recon/ && sudo alien ./nmap.rpm && sudo dpkg -i ./nmap*.deb'",
+        "sudo apt-get -qy --no-install-recommends install alien",
+        "/bin/su -l op -c 'wget https://nmap.org/dist/nmap-7.94-1.x86_64.rpm -O /home/op/recon/nmap.rpm && cd /home/op/recon/ && sudo alien ./nmap.rpm && sudo dpkg -i ./nmap*.deb'",
 
         "echo 'Installing nuclei'",
-        "/bin/su -l op -c 'GO111MODULE=on /usr/local/go/bin/go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && /home/op/go/bin/nuclei'",
+        "/bin/su -l op -c 'GO111MODULE=on /usr/local/go/bin/go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'",
+
+        "echo 'Installing nuclei-templates'",
+        '"/bin/su -l op -c '/home/op/go/bin/nuclei -ut'"
 
         "echo 'Installing axiom-worker (Redis task queue worker)'",
         "pip3 install redis -q",

@@ -1,0 +1,14 @@
+[Unit]
+Description=Celery Worker
+After=network.target
+
+[Service]
+User=op
+WorkingDirectory=/home/op/bin
+EnvironmentFile=/home/op/bin/worker.env
+ExecStart=/bin/bash /home/op/bin/worker.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

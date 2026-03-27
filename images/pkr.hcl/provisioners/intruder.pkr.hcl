@@ -114,6 +114,17 @@
         "echo 'Removing unneeded Docker images'",
         "/bin/su -l op -c 'docker image prune -f'",
 
+
+        "echo 'Installing Celery worker service'",
+        "pip3 install celery boto3",
+        "mv /tmp/configs/worker.sh /home/op/bin/worker.sh",
+        "mv /tmp/configs/worker.env /home/op/bin/worker.env",
+        "chmod +x /home/op/bin/worker.sh",
+        "chown op:users /home/op/bin/worker.sh /home/op/bin/worker.env",
+        "mv /tmp/configs/celery-worker.service /etc/systemd/system/celery-worker.service",
+        "systemctl daemon-reload",
+        "systemctl enable --now celery-worker",
+
         "/bin/su -l op -c '/usr/local/go/bin/go  clean -modcache'",
         "/bin/su -l op -c 'wget -q -O gf-completion.zsh https://raw.githubusercontent.com/tomnomnom/gf/master/gf-completion.zsh && cat gf-completion.zsh >> /home/op/.zshrc && rm gf-completion.zsh && cd'",
         "/bin/su -l root -c 'apt-get clean'",
@@ -121,6 +132,7 @@
         "touch /home/op/.z",
         "chown -R op:users /home/op",
         "chown root:root /etc/sudoers /etc/sudoers.d -R"
+
     ]
     inline_shebang = "/bin/sh -x"
   }

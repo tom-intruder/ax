@@ -12,4 +12,4 @@ echo "Pulling latest tasks.py from s3://$S3_CONFIG_BUCKET/tasks.py"
 aws s3 cp "s3://$S3_CONFIG_BUCKET/tasks.py" "$TASKS_PATH"
 
 echo "Starting Celery worker"
-exec celery -A tasks worker --loglevel=info
+exec /home/op/.local/bin/celery -A tasks worker --loglevel=info

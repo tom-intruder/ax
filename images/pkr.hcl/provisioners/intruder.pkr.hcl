@@ -115,8 +115,11 @@
         "/bin/su -l op -c 'docker image prune -f'",
 
 
+        "echo 'Installing AWS CLI'",
+        "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/awscliv2.zip /tmp/aws",
+
         "echo 'Installing Celery worker service'",
-        "pip3 install celery boto3",
+        "/bin/su -l op -c 'pip3 install celery boto3'",
         "mv /tmp/configs/worker.sh /home/op/bin/worker.sh",
         "mv /tmp/configs/worker.env /home/op/bin/worker.env",
         "chmod +x /home/op/bin/worker.sh",

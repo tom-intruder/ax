@@ -51,7 +51,7 @@ create_instance() {
     fi
 
     # Launch the instance using the determined security group option
-    instance_data=$(aws ec2 run-instances \
+    aws ec2 run-instances \
         --image-id "$image_id" \
         --count 1 \
         --instance-type "$size" \
@@ -61,49 +61,15 @@ create_instance() {
         $iam_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         --user-data "$user_data" \
-        $disk_option 2>&1)
+        $disk_option 2>&1 >> /dev/null
 
-    if [[ $? -ne 0 ]]; then
+     if [[ $? -ne 0 ]]; then
         echo "Error: Failed to launch instance '$name' in region '$region'."
         return 1
-    fi
+     fi
 
-    instance_id=$(echo "$instance_data" | jq -r '.Instances[0].InstanceId')
-
-    # Poll EC2 health checks instead of sleeping blindly
-    local interval=8
-    local elapsed=0
-    local timeout=300
-
-    while [ "$elapsed" -lt "$timeout" ]; do
-        state=$(aws ec2 describe-instances \
-            --instance-ids "$instance_id" \
-            --region "$region" \
-            --query 'Reservations[0].Instances[0].State.Name' \
-            --output text 2>/dev/null)
-
-        if [[ "$state" == "running" ]]; then
-            health=$(aws ec2 describe-instance-status \
-                --instance-ids "$instance_id" \
-                --region "$region" \
-                --query 'InstanceStatuses[0].{System:SystemStatus.Status,Instance:InstanceStatus.Status}' \
-                --output json 2>/dev/null)
-
-            sys_ok=$(echo "$health" | jq -r '.System // empty')
-            inst_ok=$(echo "$health" | jq -r '.Instance // empty')
-
-            if [[ "$sys_ok" == "ok" && "$inst_ok" == "ok" ]]; then
-                sleep 15
-                return 0
-            fi
-        fi
-
-        sleep "$interval"
-        elapsed=$((elapsed + interval))
-    done
-
-    echo "Warning: instance '$name' did not pass health checks within ${timeout}s."
-    return 1
+    # Allow time for instance initialization if needed
+    sleep 260
 }
 
 ###################################################################
@@ -889,8 +855,6 @@ create_instances() {
 
     while [ "$elapsed" -lt "$timeout" ]; do
         all_ready=true
-
-        # Fetch running state + IPs for all instances in one call
         current_statuses=$(
             aws ec2 describe-instances \
                 --instance-ids "${instance_ids[@]}" \
@@ -898,61 +862,42 @@ create_instances() {
                 --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,PublicIp:PublicIpAddress,PrivateIp:PrivateIpAddress}' \
                 --output json
         )
-
-        # Fetch EC2 health checks for all instances in one call.
-        # SystemStatus = AWS infrastructure reachability (power, network, hardware).
-        # InstanceStatus = OS-level reachability (file system, kernel, networking).
-        # Both "ok" is a reliable signal the instance is ready — not just booted.
-        health_statuses=$(
-            aws ec2 describe-instance-status \
-                --instance-ids "${instance_ids[@]}" \
-                --region "$region" \
-                --query 'InstanceStatuses[].{Id:InstanceId,System:SystemStatus.Status,Instance:InstanceStatus.Status}' \
-                --output json 2>/dev/null
-        ) || health_statuses="[]"
-
         for i in "${!instance_ids[@]}"; do
             id="${instance_ids[$i]}"
             name="${instance_names[$i]}"
 
+            # Parse the state and IP from the single JSON array
             state=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .State' <<< "$current_statuses")
-
-            # Not yet running — no point checking health checks
-            if [[ "$state" != "running" ]]; then
-                all_ready=false
-                continue
+            if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
+                ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PrivateIp' <<< "$current_statuses")
+            else
+                ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PublicIp' <<< "$current_statuses")
             fi
 
-            sys_ok=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .System' <<< "$health_statuses")
-            inst_ok=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .Instance' <<< "$health_statuses")
-
-            if [[ "$sys_ok" == "ok" && "$inst_ok" == "ok" ]]; then
+            if [[ "$state" == "running" ]]; then
+                # If we haven't printed a success message yet, do it now
                 if ! grep -q "^$name\$" "$processed_file"; then
                     echo "$name" >> "$processed_file"
-                    if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
-                        ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PrivateIp' <<< "$current_statuses")
-                    else
-                        ip=$(jq -r --arg id "$id" '.[] | select(.Id == $id) | .PublicIp' <<< "$current_statuses")
-                    fi
                     >&2 echo -e "${BWhite}Initialized instance '${BGreen}$name${Color_Off}${BWhite}' at IP '${BGreen}${ip:-"N/A"}${BWhite}'!"
                     axiom_stats_log_instance "$name" "${ip:-N/A}" "$region" "$size" "$image_id" "$id"
+
                 fi
             else
-                # Running but health checks still initializing
+                # If any instance is not in "running", we must keep waiting
                 all_ready=false
             fi
         done
 
-        if $all_ready; then
-            rm -f "$processed_file"
-            # Health checks passing means the OS networking stack is verified;
-            # short buffer for the SSH daemon to finish starting.
-            sleep 15
-            return 0
-        fi
+       # If all instances are running, we're done
+       if $all_ready; then
+           rm -f "$processed_file"
+           sleep 30
+           return 0
+       fi
 
-        sleep "$interval"
-        elapsed=$((elapsed + interval))
+       # Otherwise, sleep and increment elapsed
+       sleep "$interval"
+       elapsed=$((elapsed + interval))
 
     done
 

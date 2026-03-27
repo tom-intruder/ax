@@ -124,6 +124,15 @@ if [[ "$disk_size" == "" ]]; then
   echo -e "${Blue}Selected default option '20'${Color_Off}"
 fi
 
+echo -e -n "${Green}Please enter an IAM instance profile name to attach to instances (e.g. axiom-worker-role). Leave blank to skip: \n>> ${Color_Off}"
+read iam_instance_profile
+if [[ "$iam_instance_profile" == "" ]]; then
+  iam_instance_profile="null"
+  echo -e "${Blue}No IAM instance profile set. Instances will use the default credentials chain.${Color_Off}"
+else
+  echo -e "${BGreen}Instances will be launched with IAM instance profile '$iam_instance_profile'.${Color_Off}"
+fi
+
 echo -e -n "${Green}Please enter your VPC subnet ID to launch instances into (e.g. subnet-xxxxxxxx). Leave blank to use the default VPC (public IPs): \n>> ${Color_Off}"
 read subnet_id
 if [[ "$subnet_id" == "" ]]; then
@@ -266,7 +275,7 @@ else
   exit 1
 fi
 
-data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"subnet_id\":\"$subnet_id\",\"conductor_ip\":\"$conductor_ip\",\"redis_port\":\"6379\"}")"
+data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"iam_instance_profile\":\"$iam_instance_profile\",\"subnet_id\":\"$subnet_id\",\"conductor_ip\":\"$conductor_ip\",\"redis_port\":\"6379\"}")"
 
 echo -e "${BGreen}Profile settings below: ${Color_Off}"
 if [[ "$SECRET_KEY" != "null" ]]; then

@@ -24,6 +24,7 @@ create_instance() {
     security_group_name="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_name')"
     security_group_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_id')"
     subnet_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.subnet_id // empty')"
+    iam_instance_profile="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.iam_instance_profile // empty')"
 
     # In VPC mode (subnet_id set), must use security-group-ids; otherwise name or id
     if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
@@ -44,6 +45,11 @@ create_instance() {
         return 1
     fi
 
+    iam_option=""
+    if [[ -n "$iam_instance_profile" && "$iam_instance_profile" != "null" ]]; then
+        iam_option="--iam-instance-profile Name=$iam_instance_profile"
+    fi
+
     # Launch the instance using the determined security group option
     aws ec2 run-instances \
         --image-id "$image_id" \
@@ -52,6 +58,7 @@ create_instance() {
         --region "$region" \
         $security_group_option \
         $subnet_option \
+        $iam_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         --user-data "$user_data" \
         $disk_option 2>&1 >> /dev/null
@@ -769,6 +776,7 @@ create_instances() {
     security_group_name="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_name')"
     security_group_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_id')"
     subnet_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.subnet_id // empty')"
+    iam_instance_profile="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.iam_instance_profile // empty')"
 
     # In VPC mode (subnet_id set), must use security-group-ids; otherwise name or id
     if [[ -n "$subnet_id" && "$subnet_id" != "null" ]]; then
@@ -789,6 +797,11 @@ create_instances() {
         return 1
     fi
 
+    iam_option=""
+    if [[ -n "$iam_instance_profile" && "$iam_instance_profile" != "null" ]]; then
+        iam_option="--iam-instance-profile Name=$iam_instance_profile"
+    fi
+
     disk_option="--block-device-mappings DeviceName=/dev/xvda,Ebs={VolumeSize=$disk,VolumeType=gp2,DeleteOnTermination=true}"
 
     count="${#names[@]}"
@@ -801,6 +814,7 @@ create_instances() {
         --region "$region" \
         $security_group_option \
         $subnet_option \
+        $iam_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         $disk_option \
         --user-data "$user_data")

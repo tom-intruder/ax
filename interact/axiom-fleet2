@@ -38,6 +38,8 @@ legacy_spinup=false
 #
 timer(){
 (
+    # Clear the countdown line cleanly when killed (SIGTERM from the parent)
+    trap 'printf "\r\033[K"; exit 0' TERM
     secs=$timeout
     while [ $secs -gt 0 ]; do
         echo -ne "${BWhite}>> T-Minus $secs to full initialization...${Color_Off}\r"
@@ -306,8 +308,14 @@ for ((i = 0; i < num_names; i++)); do
 done
 
 if [[ "$legacy_spinup" == "false" ]]; then
-    # Calculate dynamic timeout
-    timeout=$((420 + (amount * timeout_sleep)))
+    # Calculate dynamic timeout.
+    # AWS uses EC2 health checks (not a blind sleep) so 240s base is sufficient;
+    # other providers keep the original 420s base.
+    if [[ "$provider" == "aws" ]]; then
+        timeout=$((240 + (amount * timeout_sleep)))
+    else
+        timeout=$((420 + (amount * timeout_sleep)))
+    fi
     # Display instance names
     echo -n -e "${BWhite}Instances: ${Color_Off}[ "
         for name in "${names[@]}"; do
@@ -368,9 +376,10 @@ rm -rf "$temp_dir" >/dev/null 2>&1
 # Wait for all create_instances processes to complete simultaneously
 wait "${create_instances_pids[@]}"
 
-# Kill the timer when `create_instances` finishes
+# Kill the timer when `create_instances` finishes and clear the countdown line
 kill "$timer_pid" >/dev/null 2>&1
-wait "$timer_pid" 2>/dev/null || true  # Ignore errors from already terminated timer
+wait "$timer_pid" 2>/dev/null || true
+printf '\r\033[K'  # erase any leftover T-Minus text
 
 # Clean up pid_file
 rm -f "$pid_file" >/dev/null 2>&1

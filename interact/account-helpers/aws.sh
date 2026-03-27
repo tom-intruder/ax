@@ -142,24 +142,6 @@ else
   echo -e "${Blue}Instances will be launched into subnet '$subnet_id' and reachable via private IP (conductor assumed to be on the same VPC).${Color_Off}"
 fi
 
-echo -e -n "${Green}Please enter this conductor's private IP for Redis queue mode (e.g. 10.0.1.5). Leave blank to auto-detect from EC2 metadata, or skip if not using queue mode: \n>> ${Color_Off}"
-read conductor_ip
-if [[ "$conductor_ip" == "" ]]; then
-  # Try EC2 instance metadata (IMDSv2)
-  token=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
-    -H "X-aws-ec2-metadata-token-ttl-seconds: 10" 2>/dev/null)
-  if [[ -n "$token" ]]; then
-    conductor_ip=$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-      "http://169.254.169.254/latest/meta-data/local-ipv4" 2>/dev/null)
-  fi
-  if [[ -n "$conductor_ip" ]]; then
-    echo -e "${BGreen}Auto-detected conductor IP from EC2 metadata: $conductor_ip${Color_Off}"
-  else
-    conductor_ip="null"
-    echo -e "${Blue}No conductor IP set. Queue mode will not be available until conductor_ip is added to axiom.json.${Color_Off}"
-  fi
-fi
-
 aws configure set default.region "$region"
 
 # Print available security groups
@@ -275,7 +257,7 @@ else
   exit 1
 fi
 
-data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"iam_instance_profile\":\"$iam_instance_profile\",\"subnet_id\":\"$subnet_id\",\"conductor_ip\":\"$conductor_ip\",\"redis_port\":\"6379\"}")"
+data="$(echo "{\"aws_access_key\":\"$ACCESS_KEY\",\"aws_secret_access_key\":\"$SECRET_KEY\",\"group_owner_id\":\"$group_owner_id\",\"security_group_name\":\"$SECURITY_GROUP\",\"security_group_id\":\"$last_group_id\",\"region\":\"$region\",\"provider\":\"aws\",\"default_size\":\"$size\",\"default_disk_size\":\"$disk_size\",\"iam_instance_profile\":\"$iam_instance_profile\",\"subnet_id\":\"$subnet_id\"}")"
 
 echo -e "${BGreen}Profile settings below: ${Color_Off}"
 if [[ "$SECRET_KEY" != "null" ]]; then

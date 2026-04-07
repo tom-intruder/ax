@@ -19,7 +19,7 @@ create_instance() {
         disk="20"
     fi
 
-    disk_option="--block-device-mappings DeviceName=/dev/xvda,Ebs={VolumeSize=$disk,VolumeType=gp2,DeleteOnTermination=true}"
+    disk_option="--block-device-mappings DeviceName=/dev/xvda,Ebs={VolumeSize=$disk,VolumeType=gp3,DeleteOnTermination=true}"
 
     security_group_name="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_name')"
     security_group_id="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.security_group_id')"
@@ -809,7 +809,7 @@ create_instances() {
         iam_option="--iam-instance-profile Name=$iam_instance_profile"
     fi
 
-    disk_option="--block-device-mappings DeviceName=/dev/xvda,Ebs={VolumeSize=$disk,VolumeType=gp2,DeleteOnTermination=true}"
+    disk_option="--block-device-mappings DeviceName=/dev/xvda,Ebs={VolumeSize=$disk,VolumeType=gp3,DeleteOnTermination=true}"
 
     count="${#names[@]}"
 

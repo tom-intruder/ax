@@ -50,6 +50,12 @@ create_instance() {
         iam_option="--iam-instance-profile Name=$iam_instance_profile"
     fi
 
+    spot="$(cat "$AXIOM_PATH/axiom.json" | jq -r '.spot // false')"
+    spot_option=""
+    if [[ "$spot" == "true" ]]; then
+        spot_option="--instance-market-options MarketType=spot"
+    fi
+
     # Launch the instance using the determined security group option
     aws ec2 run-instances \
         --image-id "$image_id" \
@@ -59,6 +65,7 @@ create_instance() {
         $security_group_option \
         $subnet_option \
         $iam_option \
+        $spot_option \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$name}]" \
         --user-data "$user_data" \
         $disk_option 2>&1 >> /dev/null

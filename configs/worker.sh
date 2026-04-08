@@ -18,5 +18,10 @@ echo "Pulling latest config from s3://$S3_CONFIG_BUCKET/config.env"
 /usr/local/bin/aws s3 cp "s3://$S3_CONFIG_BUCKET/config.env" /home/op/bin/config.env
 export $(/usr/bin/xargs < /home/op/bin/config.env)
 
+echo "Pulling latest requirements.txt from s3://$S3_CONFIG_BUCKET/requirements.txt"
+/usr/local/bin/aws s3 cp "s3://$S3_CONFIG_BUCKET/requirements.txt" /home/op/bin/requirements.txt
+echo "Installing requirements"
+pip install --user -r /home/op/bin/requirements.txt
+
 echo "Starting Celery worker"
 exec /home/op/.local/bin/celery -A tasks worker --loglevel=info
